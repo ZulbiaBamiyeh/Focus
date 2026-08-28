@@ -8,11 +8,17 @@ A focus dashboard where the dial *is* the settings page. Drag the gauge to chang
 
 - **Four modes** — Pomodoro, Flowtime, Countdown, Stopwatch. Flowtime counts up and hands you a break sized as a fraction of what you actually worked (clamped 3–20 min), logging real minutes rather than a nominal 25.
 - **Direct-manipulation settings** — drag the ring to set the current block. Break length, long-break length, and the long-break interval are steppers sitting under the cycle pips.
+- **Six scenes** — full-bleed painted skies (Ember, Dawn, Midnight, Grove, Orchid, Vellum), all layered CSS gradients, so nothing downloads and they scale to any viewport. Or paste your own image URL.
 - **Ambience** — rain, ocean, fire, drone. All synthesised with the Web Audio API. No audio assets, no network. Fire has scheduled crackles; drone is four detuned oscillators through a lowpass.
 - **Station** — eleven long MapleStory / OSRS mixes via the YouTube IFrame API, plus any URL you paste in. The player element is 1×1 and offscreen; the visible control is a spinning disc. Ducks to 25% during breaks.
 - **Skip fx** — a short square-wave chirp, synthesised. Pitch-down on skip, pitch-up on next track.
-- **Themes** — five palettes, applied as CSS custom properties on the root.
 - **Tasks + daily stats + a seven-day history + streak**, persisted.
+
+## The layout
+
+The timer is the whole page. Everything else lives behind a dock at the bottom — Tasks, Ambience, Station, Focus stats, Preferences — each opening as a floating frosted panel that Esc or a click outside dismisses. What stays permanently on screen is only what you'd want to look at while working: the time, the block you're in, the one task you picked, and the controls.
+
+Glass tints are derived from the scene rather than a theme name: `--glass` and friends flip between a white film and a light film depending on `scene.dark`, so a light scene like Vellum gets legible panels without a second set of rules.
 
 ## Running it
 
@@ -52,7 +58,7 @@ The workflow passes the repo name as `BASE_PATH`, writes `.nojekyll` (Pages othe
 3. Custom stations are stored as bare video IDs with a placeholder title — fetching real titles would need the Data API and a key.
 4. No picture-in-picture, though the block now shows in the tab title.
 
-**Accessibility already handled** — the dial is a `role="slider"` operable with arrow keys, focus rings are visible throughout, task row actions are labelled with the task they act on, the week chart carries a text alternative, and `prefers-reduced-motion` kills the drift and breathe animations and slows the disc. Row actions stay visible on touch, where there's no hover. Please don't regress these.
+**Accessibility already handled** — the dial is a `role="slider"` operable with arrow keys, focus rings are visible throughout, task row actions are labelled with the task they act on, the week chart carries a text alternative, dock buttons expose `aria-expanded`, Esc closes any panel, and `prefers-reduced-motion` kills the drift, rise and breathe animations and slows the disc. Row actions stay visible on touch, where there's no hover. Please don't regress these.
 
 ## On the Pomodoro question
 
