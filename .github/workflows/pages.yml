@@ -44,11 +44,10 @@ jobs:
           touch dist/.nojekyll
           cp dist/index.html dist/404.html
 
+      # Requires a one-time repo setting: Settings -> Pages -> Source ->
+      # "GitHub Actions". The enablement input can't substitute for it —
+      # creating a Pages site needs admin rights that GITHUB_TOKEN lacks.
       - uses: actions/configure-pages@v5
-        # Turns Pages on for the repo the first time this runs, so there's no
-        # manual step in Settings before the first deploy.
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:

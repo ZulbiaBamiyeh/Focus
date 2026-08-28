@@ -27,7 +27,9 @@ Only runtime dependency is `react`. Styles are a plain `<style>` block inside th
 
 ## Deploying
 
-`.github/workflows/pages.yml` builds and publishes to GitHub Pages on every push to `main`. It authenticates with OIDC, so there are no secrets to configure — you only need to set **Settings → Pages → Source** to **GitHub Actions** once.
+`.github/workflows/pages.yml` builds and publishes to GitHub Pages on every push. It authenticates with OIDC, so there are no secrets to configure.
+
+**One manual step, once:** set **Settings → Pages → Source** to **GitHub Actions**. Until that's done every run fails at `configure-pages` with *"Get Pages site failed"*. The action's `enablement: true` input can't do it for you — creating a Pages site needs admin rights that `GITHUB_TOKEN` doesn't carry. After flipping it, re-run the workflow from the Actions tab.
 
 The workflow passes the repo name as `BASE_PATH`, writes `.nojekyll` (Pages otherwise strips underscore-prefixed files), and copies `index.html` to `404.html` so deep links resolve.
 
