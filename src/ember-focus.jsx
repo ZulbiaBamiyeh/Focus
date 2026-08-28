@@ -128,8 +128,14 @@ const CSS = `
 .em-tasktext.done{color:var(--muted); text-decoration:line-through;}
 .em-tasktext.current{color:var(--accent);}
 .em-tasktext:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
-.em-x{background:transparent; border:0; color:var(--muted); opacity:0; cursor:pointer; font-size:15px; padding:2px 4px;}
+.em-x{background:transparent; border:0; color:var(--muted); opacity:0; cursor:pointer; font-size:15px; padding:2px 4px;
+  border-radius:3px; flex:0 0 auto; transition:opacity .14s;}
 .em-taskrow:hover .em-x, .em-x:focus-visible{opacity:.85;}
+.em-x:hover:not([disabled]){color:var(--accent);}
+.em-x:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+.em-x[disabled]{opacity:0 !important; cursor:default; pointer-events:none;}
+/* Touch has no hover, so the row actions need to be permanently visible. */
+@media (hover:none){ .em-x{opacity:.6;} }
 .em-note{color:var(--muted); font-size:12px; line-height:1.6; margin:10px 0 0;}
 
 .em-sound{display:flex; align-items:center; gap:12px; margin-bottom:12px;}
@@ -165,6 +171,16 @@ const CSS = `
 .em-stat b{display:block; font-family:var(--mono); font-size:27px; font-weight:200; font-variant-numeric:tabular-nums; letter-spacing:-.03em;}
 .em-stat small{font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted);}
 
+.em-week{display:flex; gap:6px; align-items:flex-end; margin-top:16px;}
+.em-weekcol{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0;}
+.em-weekbar{width:100%; height:44px; display:flex; align-items:flex-end; border-radius:3px; background:var(--glass);}
+.em-weekbar span{display:block; width:100%; min-height:2px; border-radius:3px; background:var(--muted); opacity:.5;
+  transition:height .3s ease;}
+.em-weekbar span.on{background:var(--accent); opacity:1;}
+.em-weekcol small{font-family:var(--mono); font-size:9px; letter-spacing:.1em; color:var(--muted);}
+.em-weekcol small.on{color:var(--accent);}
+@media (prefers-reduced-motion:reduce){ .em-weekbar span{transition:none;} }
+
 .em-pref{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; color:var(--muted); margin-bottom:11px;}
 .em-toggle{width:34px; height:18px; border-radius:9px; border:1px solid var(--line2); background:transparent; cursor:pointer; padding:2px; flex:0 0 auto;}
 .em-toggle:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
@@ -179,11 +195,12 @@ const CSS = `
 
 /* ── constants ───────────────────────────────────────────── */
 const SWEEP = 300, START = -150;
-const LIMITS = { focus:[5,90], break:[1,30], long:[5,45], countdown:[1,120] };
-const STORE_KEY = "ember:v2";
+const LIMITS = { focus:[5,90], break:[1,30], long:[5,45], countdown:[1,120], flow:[2,12] };
+const STORE_KEY = "ember:v3";
 const DEFAULTS = {
   focusMin:25, breakMin:5, longMin:15, longEvery:4, countdownMin:10,
-  autoBreak:true, autoFocus:false, chime:true, duck:true, theme:"ember",
+  autoBreak:true, autoFocus:false, chime:true, duck:true, notify:false,
+  theme:"ember", flowDivisor:5,
 };
 const LAYERS = [
   { id:"rain", name:"Rain" }, { id:"ocean", name:"Ocean" },
@@ -210,8 +227,10 @@ const store = (() => {
 })();
 
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
-const today = () => new Date().toISOString().slice(0,10);
 const pad = (n) => String(n).padStart(2,"0");
+/* Local date key, not UTC — an 8pm session in UTC-5 belongs to today, not tomorrow. */
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today = () => dayKey();
 const fmt = (ms) => {
   const t = Math.max(0, Math.round(ms/1000));
   const h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
@@ -221,6 +240,38 @@ const polar = (cx,cy,r,deg) => { const a = deg*Math.PI/180; return [cx + r*Math.
 const arcPath = (cx,cy,r,a0,a1) => {
   const [x0,y0] = polar(cx,cy,r,a0), [x1,y1] = polar(cx,cy,r,a1);
   return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1-a0) > 180 ? 1 : 0} 1 ${x1} ${y1}`;
+};
+
+/* Pull an 11-char video id out of whatever the user pasted — watch links,
+   youtu.be, /embed/, /shorts/, or a bare id. */
+const parseVideoId = (raw) => {
+  const s = (raw || "").trim();
+  if (!s) return null;
+  if (/^[\w-]{11}$/.test(s)) return s;
+  let u;
+  try { u = new URL(s.includes("://") ? s : `https://${s}`); } catch { return null; }
+  if (!/(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/.test(u.hostname)) return null;
+  if (u.hostname.endsWith("youtu.be")) {
+    const id = u.pathname.slice(1);
+    return /^[\w-]{11}$/.test(id) ? id : null;
+  }
+  const v = u.searchParams.get("v");
+  if (v && /^[\w-]{11}$/.test(v)) return v;
+  const m = u.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/);
+  return m ? m[2] : null;
+};
+
+/* Keys for the last n days, oldest first. Built off local dates so the
+   week view lines up with what the user actually calls "today". */
+const lastDays = (n) => {
+  const out = [];
+  const d = new Date();
+  for (let i = n-1; i >= 0; i--) {
+    const x = new Date(d);
+    x.setDate(d.getDate()-i);
+    out.push({ key: dayKey(x), label: x.toLocaleDateString([], { weekday:"narrow" }) });
+  }
+  return out;
 };
 
 /* ── ambience + effects: all synthesised, nothing downloads ─ */
@@ -334,7 +385,7 @@ function useAudio() {
 }
 
 /* ── YouTube audio (video element stays hidden) ───────────── */
-function useStation() {
+function useStation(list) {
   const player = useRef(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -342,13 +393,17 @@ function useStation() {
   const [idx, setIdx] = useState(0);
   const [vol, setVol] = useState(45);
   const pending = useRef(null);
+  /* The list grows when the user pastes a URL; keep a ref so the callbacks
+     below don't close over a stale copy. */
+  const stations = useRef(list);
+  stations.current = list;
 
   useEffect(() => {
     let dead = false;
     const build = () => {
       if (dead || !window.YT || !window.YT.Player) return;
       player.current = new window.YT.Player("em-yt-host", {
-        height: "1", width: "1", videoId: STATIONS[0].id,
+        height: "1", width: "1", videoId: stations.current[0].id,
         playerVars: { autoplay:0, controls:0, playsinline:1, rel:0, modestbranding:1 },
         events: {
           onReady: (e) => { e.target.setVolume(vol); setReady(true); if (pending.current) { pending.current(); pending.current = null; } },
@@ -373,11 +428,12 @@ function useStation() {
   }, []); // eslint-disable-line
 
   const load = useCallback((i, autoplay) => {
-    const n = (i + STATIONS.length) % STATIONS.length;
+    const L = stations.current;
+    const n = ((i % L.length) + L.length) % L.length;
     setIdx(n);
     const go = () => {
-      if (autoplay) player.current.loadVideoById(STATIONS[n].id);
-      else player.current.cueVideoById(STATIONS[n].id);
+      if (autoplay) player.current.loadVideoById(L[n].id);
+      else player.current.cueVideoById(L[n].id);
     };
     if (player.current && ready) go(); else pending.current = go;
   }, [ready]);
@@ -459,6 +515,59 @@ function Dial({ value, min, max, progress, editable, tone, running, onChange }) 
   );
 }
 
+/* ── small controls (kept out of the render body so they keep identity) ── */
+function Step({ label, value, onChange, lim, suffix = "m" }) {
+  return (
+    <div className="em-step">
+      <label>{label}</label>
+      <button className="em-nudge" aria-label={`Decrease ${label}`}
+        onClick={() => onChange(clamp(value-1, lim[0], lim[1]))}>−</button>
+      <b>{value}{suffix}</b>
+      <button className="em-nudge" aria-label={`Increase ${label}`}
+        onClick={() => onChange(clamp(value+1, lim[0], lim[1]))}>+</button>
+    </div>
+  );
+}
+
+function Toggle({ on, set, children }) {
+  return (
+    <div className="em-pref">
+      <span>{children}</span>
+      <button className="em-toggle" aria-pressed={on} onClick={() => set(!on)}>
+        <span className="em-knob" />
+      </button>
+    </div>
+  );
+}
+
+/* Last seven days of focus minutes. Bars are relative to the best day,
+   so the shape reads even when the absolute numbers are small. */
+function WeekBars({ log }) {
+  const days = useMemo(() => lastDays(7), []);
+  const rows = days.map((d) => ({ ...d, minutes: log[d.key]?.minutes || 0 }));
+  const peak = Math.max(30, ...rows.map((r) => r.minutes));
+  const total = rows.reduce((a,r) => a + r.minutes, 0);
+  const k = today();
+
+  return (
+    <>
+      <div className="em-week" role="img"
+        aria-label={`Focus minutes for the last seven days: ${rows.map((r) => `${r.label} ${r.minutes}`).join(", ")}`}>
+        {rows.map((r) => (
+          <div className="em-weekcol" key={r.key} title={`${r.key} — ${r.minutes} min`}>
+            <div className="em-weekbar">
+              <span style={{ height:`${Math.round((r.minutes/peak)*100)}%` }}
+                className={r.key === k ? "on" : ""} />
+            </div>
+            <small className={r.key === k ? "on" : ""}>{r.label}</small>
+          </div>
+        ))}
+      </div>
+      <p className="em-note">{total} minutes across the week.</p>
+    </>
+  );
+}
+
 /* ── app ─────────────────────────────────────────────────── */
 export default function Ember() {
   const [cfg, setCfg] = useState(DEFAULTS);
@@ -467,6 +576,9 @@ export default function Ember() {
   const [log, setLog] = useState({});
   const [levels, setLevels] = useState({ rain:0, ocean:0, fire:0, drone:0 });
   const [loaded, setLoaded] = useState(false);
+  const [custom, setCustom] = useState([]);
+  const [urlDraft, setUrlDraft] = useState("");
+  const [urlError, setUrlError] = useState("");
 
   const [mode, setMode] = useState("pomodoro");
   const [phase, setPhase] = useState("focus");
@@ -479,7 +591,8 @@ export default function Ember() {
 
   const endAt = useRef(0), runFrom = useRef(0);
   const { setLevel, chime, blip } = useAudio();
-  const station = useStation();
+  const allStations = useMemo(() => [...STATIONS, ...custom], [custom]);
+  const station = useStation(allStations);
 
   const th = THEMES[cfg.theme] || THEMES.ember;
   const dark = cfg.theme !== "vellum";
@@ -504,7 +617,29 @@ export default function Ember() {
           if (d.cfg) { setCfg({ ...DEFAULTS, ...d.cfg }); setRemaining((d.cfg.focusMin ?? 25)*60000); }
           if (d.tasks) setTasks(d.tasks);
           if (d.log) setLog(d.log);
+          if (d.custom) setCustom(d.custom);
           if (d.currentId !== undefined) setCurrentId(d.currentId);
+
+          /* Resume a block that was running when the page went away. The
+             wall-clock deadline is what was saved, so time that passed while
+             the tab was closed still counts against it. */
+          const t = d.timer;
+          if (t && t.mode) {
+            setMode(t.mode); setPhase(t.phase); setDoneCount(t.doneCount || 0);
+            const up = t.mode === "stopwatch" || (t.mode === "flowtime" && t.phase === "focus");
+            if (up) {
+              const el = t.running ? Date.now() - t.runFrom : (t.elapsed || 0);
+              runFrom.current = Date.now() - el;
+              setElapsed(el);
+              setRunning(!!t.running);
+            } else if (t.running) {
+              const left = t.endAt - Date.now();
+              /* Expired while away: land on zero, paused, rather than
+                 firing a chime for a block that ended hours ago. */
+              if (left > 0) { endAt.current = t.endAt; setRemaining(left); setRunning(true); }
+              else setRemaining(0);
+            } else if (t.remaining > 0) setRemaining(t.remaining);
+          }
         }
       } catch (e) { /* nothing saved yet */ }
       if (alive) setLoaded(true);
@@ -512,15 +647,35 @@ export default function Ember() {
     return () => { alive = false; };
   }, []);
 
+  /* Live tick values, mirrored into a ref so the save effect can read them
+     without re-running five times a second. endAt/runFrom are the real
+     source of truth for a running block; these only matter when paused. */
+  const snap = useRef({ elapsed:0, remaining:0 });
+  snap.current = { elapsed, remaining };
+
   useEffect(() => {
     if (!loaded) return;
     const id = setTimeout(() => {
-      store.set(STORE_KEY, JSON.stringify({ cfg, tasks, log, currentId })).catch(() => {});
+      const timer = {
+        mode, phase, running, doneCount,
+        elapsed: snap.current.elapsed, remaining: snap.current.remaining,
+        endAt: endAt.current, runFrom: runFrom.current,
+      };
+      store.set(STORE_KEY, JSON.stringify({ cfg, tasks, log, currentId, custom, timer })).catch(() => {});
     }, 400);
     return () => clearTimeout(id);
-  }, [cfg, tasks, log, currentId, loaded]);
+  }, [cfg, tasks, log, currentId, custom, loaded, mode, phase, running, doneCount]);
 
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+
+  /* Put the block in the tab title so the timer is readable from another tab. */
+  useEffect(() => {
+    const base = "Focus";
+    const up = mode === "stopwatch" || (mode === "flowtime" && phase === "focus");
+    if (!running) { document.title = base; return; }
+    document.title = `${fmt(up ? elapsed : remaining)} · ${phase === "focus" ? "Focus" : "Break"}`;
+    return () => { document.title = base; };
+  }, [running, mode, elapsed, remaining, phase]);
 
   const phaseLen = useCallback((p) => {
     if (mode === "countdown") return cfg.countdownMin*60000;
@@ -545,15 +700,22 @@ export default function Ember() {
     setLog((L) => ({ ...L, [k]: { sessions:(L[k]?.sessions||0)+1, minutes:(L[k]?.minutes||0)+Math.round(mins) } }));
   }, []);
 
+  const notify = useCallback((body) => {
+    if (!cfg.notify || typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    try { new Notification("Focus", { body, tag:"em-block" }); } catch { /* denied or unsupported */ }
+  }, [cfg.notify]);
+
   const advance = useCallback(() => {
     if (cfg.chime) chime(phase !== "focus");
+    notify(phase === "focus" ? "Block finished — take a break." : "Break over — back to it.");
     if (mode === "countdown" || mode === "stopwatch") { setRunning(false); setRemaining(phaseLen(phase)); return; }
 
     if (mode === "flowtime") {
       if (phase === "focus") {
         const mins = elapsed/60000;
         record(mins);
-        const br = clamp(Math.round(mins/5), 3, 20);
+        const br = clamp(Math.round(mins/cfg.flowDivisor), 3, 20);
         setPhase("break"); setRemaining(br*60000); setElapsed(0);
         if (cfg.autoBreak) { endAt.current = Date.now()+br*60000; setRunning(true); } else setRunning(false);
       } else {
@@ -574,7 +736,7 @@ export default function Ember() {
       setPhase("focus"); setRemaining(cfg.focusMin*60000);
       if (cfg.autoFocus) { endAt.current = Date.now()+cfg.focusMin*60000; setRunning(true); } else setRunning(false);
     }
-  }, [cfg, chime, doneCount, mode, phase, phaseLen, record, elapsed]);
+  }, [cfg, chime, notify, doneCount, mode, phase, phaseLen, record, elapsed]);
 
   useEffect(() => {
     if (!running) return;
@@ -629,7 +791,7 @@ export default function Ember() {
   const streak = useMemo(() => {
     let n = 0; const d = new Date();
     for (;;) {
-      const k = d.toISOString().slice(0,10);
+      const k = dayKey(d);
       if ((log[k]?.sessions||0) > 0) { n++; d.setDate(d.getDate()-1); }
       else if (n === 0 && k === today()) { d.setDate(d.getDate()-1); }
       else break;
@@ -646,30 +808,51 @@ export default function Ember() {
     setDraft("");
   };
 
+  const moveTask = (id, dir) => setTasks((L) => {
+    const i = L.findIndex((t) => t.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= L.length) return L;
+    const next = [...L];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
+  });
+
+  /* Selecting the new station has to wait until the merged list has actually
+     re-rendered — load() reads the list from a ref, which is a render behind. */
+  const selectAfterAdd = useRef(false);
+  useEffect(() => {
+    if (!selectAfterAdd.current) return;
+    selectAfterAdd.current = false;
+    station.load(allStations.length - 1, station.playing);
+  }, [allStations.length]); // eslint-disable-line
+
+  const addStation = (e) => {
+    if (e.key !== "Enter") return;
+    const id = parseVideoId(urlDraft);
+    if (!id) { setUrlError("That doesn't look like a YouTube link."); return; }
+    if (allStations.some((s) => s.id === id)) { setUrlError("Already in the list."); return; }
+    selectAfterAdd.current = true;
+    setCustom((L) => [...L, { id, title:"Your station", by:"added by you", mine:true }]);
+    setUrlDraft(""); setUrlError("");
+  };
+
   const label = mode === "stopwatch" ? "Counting up"
     : mode === "countdown" ? "Countdown"
     : mode === "flowtime" ? (phase === "focus" ? "Flowing" : "Earned break")
     : phase === "focus" ? "Focus" : phase === "break" ? "Short break" : "Long break";
 
-  const Step = ({ label:l, field, lim, suffix = "m" }) => (
-    <div className="em-step">
-      <label>{l}</label>
-      <button className="em-nudge" aria-label={`Decrease ${l}`}
-        onClick={() => setCfg((c) => ({ ...c, [field]: clamp(c[field]-1, lim[0], lim[1]) }))}>−</button>
-      <b>{cfg[field]}{suffix}</b>
-      <button className="em-nudge" aria-label={`Increase ${l}`}
-        onClick={() => setCfg((c) => ({ ...c, [field]: clamp(c[field]+1, lim[0], lim[1]) }))}>+</button>
-    </div>
-  );
+  const setField = useCallback((field) => (v) => setCfg((c) => ({ ...c, [field]: v })), []);
 
-  const Toggle = ({ on, set, children }) => (
-    <div className="em-pref">
-      <span>{children}</span>
-      <button className="em-toggle" aria-pressed={on} onClick={() => set(!on)}><span className="em-knob" /></button>
-    </div>
-  );
+  /* Turning notifications on has to ask the browser first — and the ask only
+     works inside a user gesture, which this click is. */
+  const askNotify = useCallback((want) => {
+    if (!want || typeof Notification === "undefined") { setCfg((c) => ({ ...c, notify:false })); return; }
+    if (Notification.permission === "granted") { setCfg((c) => ({ ...c, notify:true })); return; }
+    if (Notification.permission === "denied") return;
+    Notification.requestPermission().then((p) => setCfg((c) => ({ ...c, notify: p === "granted" })));
+  }, []);
 
-  const st = STATIONS[station.idx];
+  const st = allStations[station.idx] || allStations[0];
 
   return (
     <div className="em-root" style={vars}>
@@ -735,6 +918,16 @@ export default function Ember() {
               )}
             </div>
 
+            {mode === "flowtime" && (
+              <div className="em-cycle">
+                <Step label="Break is 1 /" value={cfg.flowDivisor} onChange={setField("flowDivisor")}
+                  lim={LIMITS.flow} suffix="" />
+                <span className="em-note" style={{ margin:0 }}>
+                  of what you worked, kept between 3 and 20 minutes.
+                </span>
+              </div>
+            )}
+
             {mode === "pomodoro" && (
               <div className="em-cycle">
                 <div className="em-pips" aria-label={`${doneCount % cfg.longEvery} of ${cfg.longEvery} blocks before the long break`}>
@@ -744,16 +937,9 @@ export default function Ember() {
                   <span style={{ color:"var(--muted)", fontSize:11, margin:"0 3px" }}>→</span>
                   <span className={`em-pip long${phase==="long" ? " on":""}`} />
                 </div>
-                <Step label="Break" field="breakMin" lim={LIMITS.break} />
-                <Step label="Long" field="longMin" lim={LIMITS.long} />
-                <div className="em-step">
-                  <label>Every</label>
-                  <button className="em-nudge" aria-label="Fewer blocks before a long break"
-                    onClick={() => setCfg((c) => ({ ...c, longEvery: clamp(c.longEvery-1,2,8) }))}>−</button>
-                  <b>{cfg.longEvery}</b>
-                  <button className="em-nudge" aria-label="More blocks before a long break"
-                    onClick={() => setCfg((c) => ({ ...c, longEvery: clamp(c.longEvery+1,2,8) }))}>+</button>
-                </div>
+                <Step label="Break" value={cfg.breakMin} onChange={setField("breakMin")} lim={LIMITS.break} />
+                <Step label="Long" value={cfg.longMin} onChange={setField("longMin")} lim={LIMITS.long} />
+                <Step label="Every" value={cfg.longEvery} onChange={setField("longEvery")} lim={[2,8]} suffix="" />
               </div>
             )}
           </div>
@@ -767,14 +953,15 @@ export default function Ember() {
                 <div className="em-stat"><b>{stat.minutes}</b><small>Minutes</small></div>
                 <div className="em-stat"><b>{streak}</b><small>Day streak</small></div>
               </div>
+              <WeekBars log={log} />
             </div>
 
             <div className="em-card">
               <h3>Station</h3>
               {station.failed ? (
                 <p className="em-note" style={{ marginTop:0 }}>
-                  YouTube is blocked in this frame, so the station can't load. Open the artifact in its own
-                  window, or run the file locally, and it will play. The ambience below works either way.
+                  The YouTube player couldn't load — usually a blocker or an extension cutting off
+                  the embed. The ambience below is synthesised locally and works regardless.
                 </p>
               ) : (
                 <>
@@ -796,10 +983,23 @@ export default function Ember() {
                       value={station.vol} aria-label="Music volume"
                       onChange={(e) => station.setVolume(+e.target.value)} />
                   </div>
-                  <select className="em-select" value={station.idx}
+                  <select className="em-select" value={station.idx} aria-label="Choose a station"
                     onChange={(e) => station.load(+e.target.value, station.playing)}>
-                    {STATIONS.map((s,i) => <option key={s.id} value={i}>{s.title} — {s.by}</option>)}
+                    {allStations.map((s,i) => <option key={s.id} value={i}>{s.title} — {s.by}</option>)}
                   </select>
+                  <input className="em-input" value={urlDraft} placeholder="Paste a YouTube URL, press enter"
+                    aria-label="Add your own station by URL"
+                    aria-invalid={urlError ? "true" : undefined}
+                    onChange={(e) => { setUrlDraft(e.target.value); setUrlError(""); }}
+                    onKeyDown={addStation} />
+                  {urlError && <p className="em-note" role="alert" style={{ color:"var(--accent)" }}>{urlError}</p>}
+                  {st.mine && (
+                    <button className="em-btn" style={{ marginTop:10, padding:"7px 13px" }}
+                      onClick={() => {
+                        setCustom((L) => L.filter((s) => s.id !== st.id));
+                        station.load(0, false);
+                      }}>Remove this station</button>
+                  )}
                   {!station.ready && <p className="em-note">Loading the player…</p>}
                 </>
               )}
@@ -813,13 +1013,17 @@ export default function Ember() {
                 <p className="em-note">Nothing here yet. Add the one thing you want finished today.</p>
               ) : (
                 <ul className="em-tasks">
-                  {tasks.map((t) => (
+                  {tasks.map((t,i) => (
                     <li key={t.id} className="em-taskrow">
                       <button className={`em-check${t.done?" done":""}`} aria-label={t.done?"Mark unfinished":"Mark finished"}
                         onClick={() => { blip(!t.done); setTasks((L) => L.map((x) => x.id===t.id ? { ...x, done:!x.done } : x)); if (currentId===t.id) setCurrentId(null); }} />
                       <button className={`em-tasktext${t.done?" done":""}${currentId===t.id && !t.done ? " current":""}`}
                         onClick={() => setCurrentId(t.done ? null : t.id)}>{t.text}</button>
-                      <button className="em-x" aria-label="Remove task"
+                      <button className="em-x" aria-label={`Move "${t.text}" up`} disabled={i === 0}
+                        onClick={() => moveTask(t.id, -1)}>↑</button>
+                      <button className="em-x" aria-label={`Move "${t.text}" down`} disabled={i === tasks.length-1}
+                        onClick={() => moveTask(t.id, 1)}>↓</button>
+                      <button className="em-x" aria-label={`Remove "${t.text}"`}
                         onClick={() => { setTasks((L) => L.filter((x) => x.id!==t.id)); if (currentId===t.id) setCurrentId(null); }}>×</button>
                     </li>
                   ))}
@@ -842,11 +1046,12 @@ export default function Ember() {
 
             <div className="em-card">
               <h3>Preferences</h3>
-              <Toggle on={cfg.autoBreak} set={(v) => setCfg((c) => ({ ...c, autoBreak:v }))}>Start breaks automatically</Toggle>
-              <Toggle on={cfg.autoFocus} set={(v) => setCfg((c) => ({ ...c, autoFocus:v }))}>Start the next block automatically</Toggle>
-              <Toggle on={cfg.chime} set={(v) => setCfg((c) => ({ ...c, chime:v }))}>Chime when a block ends</Toggle>
-              <Toggle on={cfg.duck} set={(v) => setCfg((c) => ({ ...c, duck:v }))}>Lower the music on breaks</Toggle>
-              <p className="em-note">Press space to start or pause.</p>
+              <Toggle on={cfg.autoBreak} set={setField("autoBreak")}>Start breaks automatically</Toggle>
+              <Toggle on={cfg.autoFocus} set={setField("autoFocus")}>Start the next block automatically</Toggle>
+              <Toggle on={cfg.chime} set={setField("chime")}>Chime when a block ends</Toggle>
+              <Toggle on={cfg.duck} set={setField("duck")}>Lower the music on breaks</Toggle>
+              <Toggle on={cfg.notify} set={askNotify}>Notify me when a block ends</Toggle>
+              <p className="em-note">Press space to start or pause. Your timer, tasks and stats stay in this browser.</p>
             </div>
           </div>
         </div>
