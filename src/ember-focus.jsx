@@ -58,6 +58,14 @@ const SCENES = {
          radial-gradient(70% 50% at 82% 8%, #F7F2E6 0%, rgba(247,242,230,0) 60%),
          linear-gradient(176deg, #F2EDE1 0%, #E8E0CE 55%, #DCD0B8 100%)`,
   },
+  /* Last in the row, and the odd one out. `art` swaps the painted sky for
+     the museum canvas; the gradient here is only what shows past its walls. */
+  museum: {
+    name:"Museum", dark:true, art:true,
+    paper:"#EAECF4", muted:"#8E93A6", accent:"#F0B15C", rest:"#8FD3B6", chip:"#C9A882",
+    sky:`radial-gradient(90% 65% at 50% 100%, #2A2E42 0%, rgba(42,46,66,0) 62%),
+         linear-gradient(180deg, #0B0D16 0%, #14172A 55%, #1E2236 100%)`,
+  },
 };
 
 /* Shown under the clock. Kept short so they never wrap past two lines. */
@@ -184,20 +192,23 @@ const CSS = `
 
 /* The 300-degree arc leaves the bottom of the square empty, so claw that
    back rather than letting it read as a gap above the task line. */
-/* The chamber is sized in JS and handed to both the dial and the museum,
-   so its walls line up with the room painted behind it. */
-.em-dialwrap{position:relative; touch-action:none; flex:0 0 auto;}
+/* One source of truth for the dial's size: the readout scales off the same
+   value, so the digits can never outgrow the ring the way a vh-based font
+   does on a narrow screen. */
+.em-hero{--dial:min(92vw, 56vh, 520px);}
+/* The 300-degree arc leaves the bottom of the square empty, so claw some of
+   it back — but the arc's arms end inside the controls' width, so the tuck
+   has to stay shallow enough that they clear on short viewports too. */
+.em-dialwrap{position:relative; width:var(--dial); aspect-ratio:1;
+  touch-action:none; margin-bottom:-3%;}
 .em-dial{display:block; width:100%; height:100%; cursor:grab; overflow:visible;}
 .em-dial.locked{cursor:default;} .em-dial.dragging{cursor:grabbing;}
 .em-readout{position:absolute; inset:0; display:flex; flex-direction:column;
   align-items:center; justify-content:center; pointer-events:none; text-align:center; padding:0 12%;}
-/* Sized off the chamber, which is set in JS — cqw keeps the digits locked
-   to the room rather than to the viewport, so they can never outgrow it. */
-.em-dialwrap{container-type:size;}
-.em-time{font-variant-numeric:tabular-nums; font-size:26cqw; font-weight:200;
-  letter-spacing:-.045em; line-height:1; text-shadow:0 2px 34px rgba(0,0,0,.45);}
+.em-time{font-variant-numeric:tabular-nums; font-size:calc(var(--dial) * .205); font-weight:200;
+  letter-spacing:-.045em; line-height:1; text-shadow:0 2px 34px rgba(0,0,0,.32);}
 /* Past an hour the readout gains "H:" and needs to come down a step. */
-.em-time.long{font-size:18cqw;}
+.em-time.long{font-size:calc(var(--dial) * .145);}
 .em-root.light .em-time{text-shadow:0 2px 26px rgba(255,255,255,.5);}
 .em-phase{margin-top:12px; font-family:var(--mono); font-size:9.5px; letter-spacing:.3em;
   text-transform:uppercase; opacity:.62;}
@@ -390,13 +401,13 @@ const CSS = `
 `;
 
 /* ── constants ───────────────────────────────────────────── */
+const SWEEP = 300, START = -150;
 const LIMITS = { focus:[5,90], break:[1,30], long:[5,45], countdown:[1,120], flow:[2,12] };
 const STORE_KEY = "ember:v3";
 const DEFAULTS = {
   focusMin:25, breakMin:5, longMin:15, longEvery:4, countdownMin:10,
   autoBreak:true, autoFocus:false, chime:true, duck:true, notify:false,
-  theme:"midnight", flowDivisor:5, photo:"",
-  museum:true, museumDim:60,
+  theme:"midnight", flowDivisor:5, photo:"", museumDim:60,
 };
 const LAYERS = [
   { id:"rain", name:"Rain" }, { id:"ocean", name:"Ocean" },
@@ -450,6 +461,12 @@ const parseVideoId = (raw) => {
   if (v && /^[\w-]{11}$/.test(v)) return v;
   const m = u.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/);
   return m ? m[2] : null;
+};
+
+const polar = (cx,cy,r,deg) => { const a = deg*Math.PI/180; return [cx + r*Math.sin(a), cy - r*Math.cos(a)]; };
+const arcPath = (cx,cy,r,a0,a1) => {
+  const [x0,y0] = polar(cx,cy,r,a0), [x1,y1] = polar(cx,cy,r,a1);
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1-a0) > 180 ? 1 : 0} 1 ${x1} ${y1}`;
 };
 
 /* Keys for the last n days, oldest first. Built off local dates so the
@@ -646,106 +663,68 @@ function useStation(list) {
   return { ready, failed, playing, idx, vol, load, toggle, setVolume, duck };
 }
 
-/* ── the gauge ───────────────────────────────────────────────
-   A square, because the timer is a walled room in the middle of the
-   museum and this traces its walls. Progress runs clockwise from top
-   centre; dragging anywhere along the perimeter sets the block.
 
-   Geometry is a 96-unit square inset in a 100-unit viewBox, so the
-   perimeter is 384 units. Corner rounding is ignored for hit-testing
-   and knob placement — at this radius the error is under a pixel.
-   ──────────────────────────────────────────────────────────── */
-const A = 2, B = 98, MID = 50, SIDE = 96, PERIM = 4 * SIDE, RAD = 7;
-
-/* Nearest point on the perimeter, as a fraction clockwise from top centre. */
-const pointToT = (px, py) => {
-  const x = clamp(px, A, B), y = clamp(py, A, B);
-  const dT = y - A, dB = B - y, dL = x - A, dR = B - x;
-  const m = Math.min(dT, dB, dL, dR);
-  let d;
-  if (m === dT) d = x >= MID ? x - MID : 336 + (x - A);
-  else if (m === dR) d = 48 + (y - A);
-  else if (m === dB) d = 144 + (B - x);
-  else d = 240 + (B - y);
-  return d / PERIM;
-};
-
-const tToPoint = (t) => {
-  const d = clamp(t, 0, 1) * PERIM;
-  if (d < 48) return [MID + d, A];
-  if (d < 144) return [B, A + (d - 48)];
-  if (d < 240) return [B - (d - 144), B];
-  if (d < 336) return [A, B - (d - 240)];
-  return [A + (d - 336), A];
-};
-
-const ROOM_PATH = `M ${MID} ${A}
-  L ${B - RAD} ${A} A ${RAD} ${RAD} 0 0 1 ${B} ${A + RAD}
-  L ${B} ${B - RAD} A ${RAD} ${RAD} 0 0 1 ${B - RAD} ${B}
-  L ${A + RAD} ${B} A ${RAD} ${RAD} 0 0 1 ${A} ${B - RAD}
-  L ${A} ${A + RAD} A ${RAD} ${RAD} 0 0 1 ${A + RAD} ${A}
-  Z`;
-
+/* ── the gauge ───────────────────────────────────────────── */
 function Dial({ value, min, max, progress, editable, tone, running, onChange }) {
   const svg = useRef(null);
   const [drag, setDrag] = useState(false);
-  const set = clamp((value - min) / (max - min), 0, 1);
-  const prog = clamp(progress, 0, 1);
-  const [kx, ky] = tToPoint(set);
+  const C = 200, R = 158;
+  const t = clamp((value-min)/(max-min), 0, 1);
+  const setAngle = START + SWEEP*t;
+  const progAngle = START + SWEEP*clamp(progress,0,1);
 
   const move = (e) => {
     if (!editable || !svg.current) return;
     const r = svg.current.getBoundingClientRect();
-    const t = pointToT(((e.clientX - r.left)/r.width)*100, ((e.clientY - r.top)/r.height)*100);
-    onChange(Math.round(min + t*(max - min)));
+    const px = ((e.clientX-r.left)/r.width)*400 - C;
+    const py = ((e.clientY-r.top)/r.height)*400 - C;
+    let deg = clamp(Math.atan2(px,-py)*180/Math.PI, START, START+SWEEP);
+    onChange(Math.round(min + ((deg-START)/SWEEP)*(max-min)));
   };
 
-  /* Ticks sit just inside the wall, marking each step of the range. */
+  /* Short ticks hugging the ring. Long ones read as debris against a
+     painted sky, so minors are barely more than a hairline. */
   const ticks = [];
-  for (let i = 0; i <= 48; i++) {
-    const t = i/48, major = i % 6 === 0;
-    const [x, y] = tToPoint(t);
-    const inx = x <= A + 0.5 ? 1 : x >= B - 0.5 ? -1 : 0;
-    const iny = y <= A + 0.5 ? 1 : y >= B - 0.5 ? -1 : 0;
-    const len = major ? 4.5 : 2.6;
-    ticks.push(<line key={i} x1={x + inx*2.5} y1={y + iny*2.5}
-      x2={x + inx*(2.5 + len)} y2={y + iny*(2.5 + len)} strokeLinecap="round"
-      stroke={t <= set ? tone : "currentColor"} strokeWidth={major ? 0.9 : 0.55}
-      opacity={t <= set ? (major ? 0.7 : 0.3) : (major ? 0.15 : 0.08)} />);
+  for (let i=0;i<=50;i++){
+    const a = START + SWEEP*i/50, major = i%5===0;
+    const [x1,y1] = polar(C,C,R+9,a), [x2,y2] = polar(C,C,R+(major?18:13),a);
+    ticks.push(<line key={i} x1={x1} y1={y1} x2={x2} y2={y2} strokeLinecap="round"
+      stroke={a <= setAngle ? tone : "currentColor"} strokeWidth={major?1.5:1}
+      opacity={a <= setAngle ? (major?0.75:0.34) : (major?0.16:0.09)} />);
   }
+  const [kx,ky] = polar(C,C,R,setAngle);
 
   return (
-    <svg ref={svg} viewBox="0 0 100 100" preserveAspectRatio="none"
-      className={`em-dial${editable ? "" : " locked"}${drag ? " dragging" : ""}`}
-      role="slider" tabIndex={editable ? 0 : -1} aria-label="Block length in minutes"
+    <svg ref={svg} viewBox="0 0 400 400" className={`em-dial${editable?"":" locked"}${drag?" dragging":""}`}
+      role="slider" tabIndex={editable?0:-1} aria-label="Block length in minutes"
       aria-valuemin={min} aria-valuemax={max} aria-valuenow={value}
       onPointerDown={(e) => { if (!editable) return; e.currentTarget.setPointerCapture(e.pointerId); setDrag(true); move(e); }}
       onPointerMove={(e) => drag && move(e)}
       onPointerUp={() => setDrag(false)} onPointerCancel={() => setDrag(false)}
       onKeyDown={(e) => {
         if (!editable) return;
-        if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); onChange(clamp(value+1, min, max)); }
-        if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); onChange(clamp(value-1, min, max)); }
+        if (e.key==="ArrowRight"||e.key==="ArrowUp"){ e.preventDefault(); onChange(clamp(value+1,min,max)); }
+        if (e.key==="ArrowLeft"||e.key==="ArrowDown"){ e.preventDefault(); onChange(clamp(value-1,min,max)); }
       }}>
+      <defs>
+        <radialGradient id="em-core">
+          <stop offset="0%" stopColor={tone} stopOpacity="0.32" />
+          <stop offset="65%" stopColor={tone} stopOpacity="0.05" />
+          <stop offset="100%" stopColor={tone} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx={C} cy={C} r={128} fill="url(#em-core)" className={running?"em-glow":""} opacity={running?1:0.28} />
       {ticks}
-      {/* the wall itself */}
-      <path d={ROOM_PATH} fill="none" stroke="currentColor" strokeOpacity="0.14" strokeWidth="1.6" />
-      {/* how long this block is set to run */}
-      <path d={ROOM_PATH} fill="none" stroke={tone} strokeWidth="1.6" strokeOpacity="0.28"
-        pathLength="1" strokeDasharray={`${set} ${1 - set}`} strokeLinecap="round" />
-      {/* how much of it is left */}
-      {prog > 0.001 && (
-        <path d={ROOM_PATH} fill="none" stroke={tone} strokeWidth="2.8" strokeLinecap="round"
-          pathLength="1" strokeDasharray={`${prog} ${1 - prog}`}
-          className={running ? "em-glow" : ""}
-          style={{ filter:`drop-shadow(0 0 2px ${tone})` }} />
+      <path d={arcPath(C,C,R,START,START+SWEEP)} fill="none" stroke="currentColor" strokeOpacity="0.13" strokeWidth="2.5" strokeLinecap="round" />
+      <path d={arcPath(C,C,R,START,setAngle)} fill="none" stroke={tone} strokeWidth="2.5" strokeOpacity="0.26" strokeLinecap="round" />
+      {progress > 0.001 && (
+        <path d={arcPath(C,C,R,START,progAngle)} fill="none" stroke={tone} strokeWidth="5" strokeLinecap="round"
+          style={{ filter:`drop-shadow(0 0 9px ${tone})` }} />
       )}
-      {editable && (
-        <g style={{ filter:"drop-shadow(0 1px 2px rgba(0,0,0,.5))" }}>
-          <circle cx={kx} cy={ky} r="3.4" fill={tone} fillOpacity="0.25" stroke={tone} strokeWidth="1.4" />
-          <circle cx={kx} cy={ky} r="1.1" fill={tone} />
-        </g>
-      )}
+      {editable && (<g style={{ filter:`drop-shadow(0 2px 7px rgba(0,0,0,.4))` }}>
+        <circle cx={kx} cy={ky} r="11" fill={tone} fillOpacity="0.22" stroke={tone} strokeWidth="2" />
+        <circle cx={kx} cy={ky} r="3.5" fill={tone} />
+      </g>)}
     </svg>
   );
 }
@@ -816,11 +795,6 @@ export default function Ember() {
   const [urlError, setUrlError] = useState("");
   const [panel, setPanel] = useState(null);
   const [toast, setToast] = useState(null);
-  /* The clock chamber. `chamber` is what we ask for; `fit` is what the museum
-     could actually build once snapped to whole tiles, and the dial traces
-     that so its walls and the painted ones coincide. */
-  const [chamber, setChamber] = useState(400);
-  const [fit, setFit] = useState(0);
 
   const [mode, setMode] = useState("pomodoro");
   const [phase, setPhase] = useState("focus");
@@ -916,15 +890,6 @@ export default function Ember() {
 
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
 
-  useEffect(() => {
-    /* Wide on a phone, where width is the scarce dimension; capped by height
-       on a desktop so the room never crowds the controls beneath it. */
-    const calc = () => setChamber(Math.round(Math.max(
-      240, Math.min(window.innerWidth*0.80, window.innerHeight*0.44, 440))));
-    calc();
-    window.addEventListener("resize", calc);
-    return () => window.removeEventListener("resize", calc);
-  }, []);
 
   /* Put the block in the tab title so the timer is readable from another tab. */
   useEffect(() => {
@@ -1132,9 +1097,6 @@ export default function Ember() {
 
   const st = allStations[station.idx] || allStations[0];
   const clock = fmt(countUp ? elapsed : remaining);
-  /* Trace the room the museum actually built; fall back to the requested
-     size when the museum is switched off and nothing reports back. */
-  const room = cfg.museum && fit > 0 ? fit : chamber;
 
   /* Everything the museum has ever been paid in. */
   const lifetime = useMemo(
@@ -1177,12 +1139,7 @@ export default function Ember() {
 
       <div className="em-sky" />
       {cfg.photo && <div className="em-photo" style={{ backgroundImage:`url("${cfg.photo}")` }} />}
-      {cfg.museum && (
-        <>
-          <Museum minutes={lifetime} dim={cfg.museumDim/100} chamberPx={chamber}
-            onOpen={setToast} onChamber={setFit} />
-        </>
-      )}
+      {th.art && <Museum minutes={lifetime} dim={cfg.museumDim/100} onOpen={setToast} />}
       <div className="em-bloom" /><div className="em-vignette" /><div className="em-grain" />
       <div className="em-yt"><div id="em-yt-host" /></div>
 
@@ -1218,14 +1175,14 @@ export default function Ember() {
             ))}
           </div>
 
-          <div className="em-dialwrap" style={{ width:room, height:room }}>
+          <div className="em-dialwrap">
             <Dial value={cfg[dialField]} min={dMin} max={dMax} progress={progress}
               editable={editable} tone={tone} running={running}
               onChange={(v) => setCfg((c) => ({ ...c, [dialField]: v }))} />
             <div className="em-readout">
               <div className={`em-time${clock.length > 5 ? " long" : ""}`}>{clock}</div>
               <div className="em-phase">{label}</div>
-              {editable && <div className="em-hint">Drag the walls to change this block</div>}
+              {editable && <div className="em-hint">Drag the ring to change this block</div>}
               {mode === "flowtime" && phase === "focus" && (
                 <div className="em-hint">Stop when you want. Your break scales to what you did.</div>
               )}
@@ -1428,10 +1385,10 @@ export default function Ember() {
                 <Toggle on={cfg.chime} set={setField("chime")}>Chime when a block ends</Toggle>
                 <Toggle on={cfg.duck} set={setField("duck")}>Lower the music on breaks</Toggle>
                 <Toggle on={cfg.notify} set={askNotify}>Notify me when a block ends</Toggle>
-                <Toggle on={cfg.museum} set={setField("museum")}>Show the museum</Toggle>
-                {cfg.museum && (
+                {/* Only meaningful on the Museum scene, so it appears with it. */}
+                {th.art && (
                   <div className="em-sound">
-                    <span>Brightness</span>
+                    <span>Museum</span>
                     <input className="em-slider" type="range" min="15" max="100"
                       value={cfg.museumDim} aria-label="Museum brightness"
                       onChange={(e) => setCfg((c) => ({ ...c, museumDim:+e.target.value }))} />

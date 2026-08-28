@@ -161,15 +161,13 @@ function load(src) {
   });
 }
 
-export default function Museum({ minutes, dim = 0.55, paused = false, chamberPx = 0,
-                                 onOpen, onChamber }) {
+export default function Museum({ minutes, dim = 0.55, paused = false, onOpen }) {
   const wrap = useRef(null);
   const cv = useRef(null);
   const art = useRef(null);      // loaded images
   const stat = useRef(null);     // offscreen static layer
   const people = useRef([]);
   const raf = useRef(0);
-  const fit = useRef(0);
   const [ready, setReady] = useState(false);
   const halls = hallsFor(minutes);
   const prev = useRef(halls);
@@ -349,7 +347,7 @@ export default function Museum({ minutes, dim = 0.55, paused = false, chamberPx 
 
     // Visitors on top of the halls, but under the clock chamber — walking
     // behind that room is what keeps them from tramping across the timer.
-    const { chars, rooms } = art.current;
+    const { chars } = art.current;
     people.current.forEach((p) => {
       const col = DIR[p.dir] + (Math.floor(p.frame) % 6);
       g.drawImage(chars[p.ch], col*T, 1*32, T, 32,
@@ -357,51 +355,16 @@ export default function Museum({ minutes, dim = 0.55, paused = false, chamberPx 
         Math.round(T*scale), Math.round(32*scale));
     });
 
-    /* The clock chamber: a walled room the timer sits inside. Drawn in
-       screen space at the size the dial was given, snapped to whole tiles
-       of the current scale so its masonry lines up with the halls. */
-    if (chamberPx > 2) {
-      const px = T * scale;                       // one tile, on screen
-      const cols = Math.max(6, Math.round(chamberPx / px));
-      const rowsN = cols;
-      /* A two-tile wall looks right on a large room and swallows a small
-         one, so a tight chamber gets a single course. */
-      const wr = cols >= 8 ? 2 : 1;
-      const cw = cols*px, ch = rowsN*px;
-      const cxo = Math.round((vw - cw)/2), cyo = Math.round((vh - ch)/2);
-      const wall = halls > 12 ? WALL_ALT : WALL;
-
-      /* Snapping to whole tiles means the room is never exactly the size it
-         was asked for. Report what it actually came out as, so the dial can
-         trace these walls instead of hovering outside them. */
-      if (Math.abs(fit.current - cw) > 0.5) { fit.current = cw; onChamber?.(cw); }
-
-      const put = ([sx, sy], dx, dy) =>
-        g.drawImage(rooms, sx*T, sy*T, T, T, Math.round(dx), Math.round(dy),
-          Math.ceil(px), Math.ceil(px));
-
-      for (let y = 0; y < rowsN; y++)
-        for (let x = 0; x < cols; x++)
-          put(FLOOR.herring, cxo + x*px, cyo + y*px);
-
-      for (let x = 0; x < cols; x++) {
-        put(wall.top, cxo + x*px, cyo);
-        if (wr > 1) put(wall.bottom, cxo + x*px, cyo + px);
-        put(wall.bottom, cxo + x*px, cyo + (rowsN-1)*px);
-      }
-      for (let y = 1; y < rowsN; y++) {
-        put(wall.bottom, cxo, cyo + y*px);
-        put(wall.bottom, cxo + (cols-1)*px, cyo + y*px);
-      }
-
-      // Sink the middle so a 100px readout has something to sit on.
-      const grad = g.createRadialGradient(vw/2, vh/2, 0, vw/2, vh/2, cw*0.62);
-      grad.addColorStop(0, "rgba(0,0,0,.6)");
-      grad.addColorStop(0.55, "rgba(0,0,0,.4)");
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-      g.fillStyle = grad;
-      g.fillRect(cxo, cyo, cw, ch);
-    }
+    /* Pixel art behind a 100px readout is unreadable, so the middle gets
+       sunk. No walls any more — the dial went back to a ring that floats
+       over the halls rather than being a room in them. */
+    const well = Math.min(vw, vh) * 0.42;
+    const grad = g.createRadialGradient(vw/2, vh*0.47, 0, vw/2, vh*0.47, well);
+    grad.addColorStop(0, "rgba(0,0,0,.6)");
+    grad.addColorStop(0.6, "rgba(0,0,0,.4)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, vw, vh);
   };
 
   /* Visitor movement. Axis-aligned, which keeps the four-direction sprite
@@ -443,7 +406,7 @@ export default function Museum({ minutes, dim = 0.55, paused = false, chamberPx 
     const onResize = () => draw();
     window.addEventListener("resize", onResize);
     return () => { cancelAnimationFrame(raf.current); window.removeEventListener("resize", onResize); };
-  }, [ready, paused, chamberPx]); // eslint-disable-line
+  }, [ready, paused]); // eslint-disable-line
 
   return (
     <div className="em-museum" ref={wrap} style={{ opacity: dim }} aria-hidden="true">
