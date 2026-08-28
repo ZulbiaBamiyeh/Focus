@@ -7,12 +7,25 @@ A focus dashboard where the dial *is* the settings page. Drag the gauge to chang
 ## What's in it
 
 - **Four modes** — Pomodoro, Flowtime, Countdown, Stopwatch. Flowtime counts up and hands you a break sized as a fraction of what you actually worked (clamped 3–20 min), logging real minutes rather than a nominal 25.
-- **Direct-manipulation settings** — drag the ring to set the current block. Break length, long-break length, and the long-break interval are steppers sitting under the cycle pips.
+- **Direct-manipulation settings** — drag the chamber walls to set the current block. Break length, long-break length, and the long-break interval are steppers sitting under the cycle pips.
+- **A museum that grows** with every minute you focus, with visitors wandering its halls. See below.
 - **Six scenes** — full-bleed painted skies (Ember, Dawn, Midnight, Grove, Orchid, Vellum), all layered CSS gradients, so nothing downloads and they scale to any viewport. Or paste your own image URL.
 - **Ambience** — rain, ocean, fire, drone. All synthesised with the Web Audio API. No audio assets, no network. Fire has scheduled crackles; drone is four detuned oscillators through a lowpass.
 - **Station** — eleven long MapleStory / OSRS mixes via the YouTube IFrame API, plus any URL you paste in. The player element is 1×1 and offscreen; the visible control is a spinning disc. Ducks to 25% during breaks.
 - **Skip fx** — a short square-wave chirp, synthesised. Pitch-down on skip, pitch-up on next track.
 - **Tasks + daily stats + a seven-day history + streak**, persisted.
+
+## The museum
+
+The backdrop is a pixel museum that grows with the total focus minutes behind it. The timer is not floating over it — it is a walled chamber in the middle of the floor plan, and the square dial traces that room's walls.
+
+Twenty-eight halls open on a widening curve (`10i² + 15i` minutes, so the first arrives after one pomodoro and the last takes weeks). Halls cycle through five kinds — painting gallery, antiquities, map room, reading room, sculpture court — each furnished from a fixed layout with per-hall jitter, so no two look identical but every load is the same. Visitors are bound to a single hall and walk between its exhibits; that is what keeps them out of the walls, since there is no collision.
+
+Two canvas layers. The static one holds floor, walls and exhibits and is redrawn only when a hall opens. Only the visitor pass runs per frame, and it stops when the tab is hidden or `prefers-reduced-motion` is set.
+
+The footprint never drops below 3×2 halls. A single furnished room would need ~9× scaling to cover a desktop viewport, which turns one visitor into the whole screen; the empty halls also show where the museum is going to grow.
+
+**Assets.** Sprites are LimeZu's [Modern Interiors](https://limezu.itch.io/moderninteriors) free pack, in `src/assets/` with its licence. It is **non-commercial only** — fine for this, but it rules out ever charging for the site, and note the raw sheets are redistributable from a public repo. The free pack has no dinosaurs; the nearest things to fossils are the urns and the bone-like pieces in the sculpture court.
 
 ## The layout
 
@@ -58,7 +71,7 @@ The workflow passes the repo name as `BASE_PATH`, writes `.nojekyll` (Pages othe
 3. Custom stations are stored as bare video IDs with a placeholder title — fetching real titles would need the Data API and a key.
 4. No picture-in-picture, though the block now shows in the tab title.
 
-**Accessibility already handled** — the dial is a `role="slider"` operable with arrow keys, focus rings are visible throughout, task row actions are labelled with the task they act on, the week chart carries a text alternative, dock buttons expose `aria-expanded`, Esc closes any panel, and `prefers-reduced-motion` kills the drift, rise and breathe animations and slows the disc. Row actions stay visible on touch, where there's no hover. Please don't regress these.
+**Accessibility already handled** — the square dial is still a `role="slider"` operable with arrow keys (the perimeter maths is only for pointer drags), focus rings are visible throughout, task row actions are labelled with the task they act on, the week chart carries a text alternative, dock buttons expose `aria-expanded`, Esc closes any panel, and `prefers-reduced-motion` kills the drift, rise and breathe animations and slows the disc. Row actions stay visible on touch, where there's no hover. Please don't regress these.
 
 ## On the Pomodoro question
 
