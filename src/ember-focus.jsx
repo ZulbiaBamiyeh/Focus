@@ -13,6 +13,15 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
    the little preview dot in the top bar.
    ───────────────────────────────────────────────────────────── */
 const SCENES = {
+  /* Default. Deep and even top to bottom, which keeps light text legible
+     everywhere on the page — the warmer scenes brighten toward the bottom. */
+  midnight: {
+    name:"Midnight", dark:true,
+    paper:"#E9EDF9", muted:"#8A93B4", accent:"#8AB4FF", rest:"#9FE0D4", chip:"#8AB4FF",
+    sky:`radial-gradient(85% 60% at 50% 100%, #2B4778 0%, rgba(43,71,120,0) 62%),
+         radial-gradient(60% 45% at 74% 14%, #3D3A7A 0%, rgba(61,58,122,0) 66%),
+         linear-gradient(180deg, #070A18 0%, #0E1430 50%, #16224A 100%)`,
+  },
   ember: {
     name:"Ember", dark:true,
     paper:"#F6EFE6", muted:"#B0A79C", accent:"#F2A24A", rest:"#8FD3B6", chip:"#F2A24A",
@@ -26,13 +35,6 @@ const SCENES = {
     sky:`radial-gradient(110% 80% at 22% 105%, #FFB99C 0%, rgba(255,185,156,0) 58%),
          radial-gradient(80% 55% at 82% 12%, #6E5A8C 0%, rgba(110,90,140,0) 62%),
          linear-gradient(176deg, #221A33 0%, #453353 44%, #8A5A6B 76%, #D98E84 100%)`,
-  },
-  midnight: {
-    name:"Midnight", dark:true,
-    paper:"#E6EAF7", muted:"#8A93B4", accent:"#8AB4FF", rest:"#9FE0D4", chip:"#8AB4FF",
-    sky:`radial-gradient(85% 60% at 50% 100%, #2B4778 0%, rgba(43,71,120,0) 62%),
-         radial-gradient(60% 45% at 74% 14%, #3D3A7A 0%, rgba(61,58,122,0) 66%),
-         linear-gradient(180deg, #070A18 0%, #0E1430 50%, #16224A 100%)`,
   },
   grove: {
     name:"Grove", dark:true,
@@ -104,9 +106,19 @@ const CSS = `
     radial-gradient(28% 28% at 76% 68%, var(--rest) 0%, transparent 62%);
   animation:em-drift 46s ease-in-out infinite alternate;}
 @keyframes em-drift{from{transform:translate3d(-3%,-2%,0) scale(1);}to{transform:translate3d(4%,3%,0) scale(1.16);}}
+/* Warm scenes brighten toward the bottom, which is exactly where the dock and
+   quote sit. The top-and-tail scrim keeps light text on a dark ground in every
+   scene rather than only the evenly-lit ones. */
 .em-vignette{position:absolute; inset:0; pointer-events:none;
-  background:radial-gradient(130% 100% at 50% 42%, transparent 44%, rgba(0,0,0,.42) 100%);}
-.em-root.light .em-vignette{background:radial-gradient(130% 100% at 50% 42%, transparent 48%, rgba(90,80,60,.2) 100%);}
+  background:
+    linear-gradient(to top, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 24%),
+    linear-gradient(to bottom, rgba(0,0,0,.26) 0%, rgba(0,0,0,0) 14%),
+    radial-gradient(130% 100% at 50% 42%, transparent 44%, rgba(0,0,0,.42) 100%);}
+/* Light scenes carry dark text, so the tails lighten instead of darken. */
+.em-root.light .em-vignette{background:
+    linear-gradient(to top, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 24%),
+    linear-gradient(to bottom, rgba(255,255,255,.34) 0%, rgba(255,255,255,0) 14%),
+    radial-gradient(130% 100% at 50% 42%, transparent 48%, rgba(90,80,60,.18) 100%);}
 .em-grain{position:absolute; inset:0; pointer-events:none; opacity:.13; mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.5'/></svg>");}
 @media (prefers-reduced-motion:reduce){ .em-bloom{animation:none;} }
@@ -144,14 +156,23 @@ const CSS = `
 
 /* The 300-degree arc leaves the bottom of the square empty, so claw that
    back rather than letting it read as a gap above the task line. */
-.em-dialwrap{position:relative; width:min(88vw, 46vh, 400px); aspect-ratio:1;
-  touch-action:none; margin-bottom:-7%;}
+/* One source of truth for the dial's size: the readout scales off the same
+   value, so the digits can never outgrow the ring the way a vh-based font
+   does on a narrow screen. */
+.em-hero{--dial:min(92vw, 56vh, 520px);}
+/* The 300-degree arc leaves the bottom of the square empty, so claw some of
+   it back — but the arc's arms end inside the controls' width, so the tuck
+   has to stay shallow enough that they clear on short viewports too. */
+.em-dialwrap{position:relative; width:var(--dial); aspect-ratio:1;
+  touch-action:none; margin-bottom:-3%;}
 .em-dial{display:block; width:100%; height:100%; cursor:grab; overflow:visible;}
 .em-dial.locked{cursor:default;} .em-dial.dragging{cursor:grabbing;}
 .em-readout{position:absolute; inset:0; display:flex; flex-direction:column;
   align-items:center; justify-content:center; pointer-events:none; text-align:center; padding:0 12%;}
-.em-time{font-variant-numeric:tabular-nums; font-size:clamp(46px, 11.5vh, 78px); font-weight:200;
-  letter-spacing:-.045em; line-height:1; text-shadow:0 2px 30px rgba(0,0,0,.28);}
+.em-time{font-variant-numeric:tabular-nums; font-size:calc(var(--dial) * .205); font-weight:200;
+  letter-spacing:-.045em; line-height:1; text-shadow:0 2px 34px rgba(0,0,0,.32);}
+/* Past an hour the readout gains "H:" and needs to come down a step. */
+.em-time.long{font-size:calc(var(--dial) * .145);}
 .em-root.light .em-time{text-shadow:0 2px 26px rgba(255,255,255,.5);}
 .em-phase{margin-top:12px; font-family:var(--mono); font-size:9.5px; letter-spacing:.3em;
   text-transform:uppercase; opacity:.62;}
@@ -159,7 +180,7 @@ const CSS = `
 
 /* Sits in the ring's bottom opening, so it has to stay narrower than the gap
    or a long title runs under the arc. */
-.em-task{margin-top:16px; min-height:24px; text-align:center; padding:0 16px;
+.em-task{margin-top:14px; text-align:center; padding:0 16px;
   max-width:330px; overflow-wrap:anywhere;}
 .em-task b{font-weight:400; font-size:17px; letter-spacing:-.01em;}
 .em-task span{opacity:.5; font-size:13.5px;}
@@ -350,7 +371,7 @@ const STORE_KEY = "ember:v3";
 const DEFAULTS = {
   focusMin:25, breakMin:5, longMin:15, longEvery:4, countdownMin:10,
   autoBreak:true, autoFocus:false, chime:true, duck:true, notify:false,
-  theme:"ember", flowDivisor:5, photo:"",
+  theme:"midnight", flowDivisor:5, photo:"",
 };
 const LAYERS = [
   { id:"rain", name:"Rain" }, { id:"ocean", name:"Ocean" },
@@ -750,7 +771,7 @@ export default function Ember() {
   const allStations = useMemo(() => [...STATIONS, ...custom], [custom]);
   const station = useStation(allStations);
 
-  const th = SCENES[cfg.theme] || SCENES.ember;
+  const th = SCENES[cfg.theme] || SCENES.midnight;
   const dark = th.dark;
   /* Glass reads as a light film over a dark sky and a white film over a
      light one, so every tint flips with the scene rather than the theme name. */
@@ -1035,6 +1056,7 @@ export default function Ember() {
   }, []);
 
   const st = allStations[station.idx] || allStations[0];
+  const clock = fmt(countUp ? elapsed : remaining);
 
 
   /* Dock icons, drawn inline so nothing loads. */
@@ -1104,7 +1126,7 @@ export default function Ember() {
               editable={editable} tone={tone} running={running}
               onChange={(v) => setCfg((c) => ({ ...c, [dialField]: v }))} />
             <div className="em-readout">
-              <div className="em-time">{fmt(countUp ? elapsed : remaining)}</div>
+              <div className={`em-time${clock.length > 5 ? " long" : ""}`}>{clock}</div>
               <div className="em-phase">{label}</div>
               {editable && <div className="em-hint">Drag the ring to change this block</div>}
               {mode === "flowtime" && phase === "focus" && (
@@ -1113,9 +1135,10 @@ export default function Ember() {
             </div>
           </div>
 
-          <div className="em-task">
-            {current ? <b>{current.text}</b> : <span>No task picked</span>}
-          </div>
+          {/* Only present when a task is actually picked — most sessions
+              never touch tasks, and an empty placeholder just steals room
+              from the timer. */}
+          {current && <div className="em-task"><b>{current.text}</b></div>}
 
           <div className="em-controls">
             <button className={`em-btn primary${phase !== "focus" ? " rest" : ""}`} onClick={toggle}>
