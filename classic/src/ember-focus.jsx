@@ -303,6 +303,7 @@ export default function Focus() {
      has no length to set, which is why the clock is not editable there. */
   const lenField = phase === "focus" ? "focusMin" : phase === "break" ? "breakMin" : "longMin";
   const canSetLen = !running && !countUp;
+  const timeCls = `fx-time${cfg.timerStyle === "ring" ? " sm" : ""}`;
 
   const commitTime = () => {
     const raw = editTime;
@@ -495,7 +496,7 @@ export default function Focus() {
               </svg>
             )}
             {editTime !== null ? (
-              <input ref={timeRef} className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""} fx-timeinput`}
+              <input ref={timeRef} className={`${timeCls} fx-timeinput`}
                 value={editTime} inputMode="numeric" aria-label="Segment length in minutes"
                 size={Math.max(2, editTime.length)}
                 onChange={(e) => setEditTime(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
@@ -504,15 +505,18 @@ export default function Focus() {
                   if (e.key === "Enter") e.currentTarget.blur();
                   if (e.key === "Escape") setEditTime(null);
                 }} />
-            ) : canSetLen ? (
-              <button className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""} fx-timebtn`}
+            ) : (
+              /* Always the same element, disabled when the length cannot be
+                 set — swapping it for a div on every pause changed how the
+                 digits rendered. */
+              <button className={`${timeCls} fx-timebtn`} disabled={!canSetLen}
                 onClick={() => setEditTime(String(cfg[lenField]))}
-                title="Click to change how long this segment runs"
-                aria-label={`${clock} remaining. Change the length of this segment.`}>
+                title={canSetLen ? "Click to change how long this segment runs" : undefined}
+                aria-label={canSetLen
+                  ? `${clock} remaining. Change the length of this segment.`
+                  : `${clock} remaining`}>
                 {clock}
               </button>
-            ) : (
-              <div className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""}`}>{clock}</div>
             )}
           </div>
 
