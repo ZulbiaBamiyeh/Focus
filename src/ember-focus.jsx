@@ -4,7 +4,7 @@ import Settings from "./settings.jsx";
 import Meadow from "./blobs.jsx";
 import { useAudio, useStation } from "./audio.js";
 import {
-  STORE_KEY, DEFAULTS, SCENES, QUOTES, STATIONS,
+  STORE_KEY, DEFAULTS, SCENES, QUOTES, STATIONS, LIMITS,
   store, clamp, dayKey, today, fmt, parseVideoId,
 } from "./lib.js";
 
@@ -50,6 +50,7 @@ export default function Focus() {
   const [settingsOn, setSettingsOn] = useState(false);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(null);     // inline task text, or null
+  const [editTime, setEditTime] = useState(null);   // inline minutes, or null
   const [urlDraft, setUrlDraft] = useState("");
   const [urlError, setUrlError] = useState("");
   const [full, setFull] = useState(false);
@@ -57,6 +58,7 @@ export default function Focus() {
 
   const endAt = useRef(0), runFrom = useRef(0);
   const editRef = useRef(null);
+  const timeRef = useRef(null);
   const { setLevel: setAudioLevel, chime, blip } = useAudio();
   const allStations = useMemo(() => [...STATIONS, ...custom], [custom]);
   const station = useStation(allStations);
@@ -154,9 +156,23 @@ export default function Focus() {
     return cfg.longMin*60000;
   }, [cfg]);
 
+  const runningRef = useRef(running);
+  runningRef.current = running;
+
+  /* Pick up a length edited in settings while the timer sits idle.
+     `running` is deliberately not a dependency and is read through a ref:
+     with it in the list, the running -> paused transition re-ran this and
+     snapped the clock back to full, so pausing looked like a reset. */
+  const lastLen = useRef(null);
   useEffect(() => {
-    if (!running && !countUp) setRemaining(phaseLen(phase));
-  }, [cfg.focusMin, cfg.breakMin, cfg.longMin, phase, running, countUp, phaseLen]);
+    if (!loaded) return;
+    const len = phaseLen(phase);
+    // First pass after load only adopts the length; a restored
+    // part-finished segment must not be overwritten.
+    if (lastLen.current === null || lastLen.current === len) { lastLen.current = len; return; }
+    lastLen.current = len;
+    if (!runningRef.current && !countUp) setRemaining(len);
+  }, [loaded, phase, countUp, phaseLen]);
 
   useEffect(() => {
     if (cfg.duck) station.duck(phase !== "focus" && running);
@@ -281,6 +297,21 @@ export default function Focus() {
   }, []);
 
   useEffect(() => { if (editing !== null) editRef.current?.focus(); }, [editing]);
+  useEffect(() => { if (editTime !== null) timeRef.current?.select(); }, [editTime]);
+
+  /* Which length this segment runs on. Flowtime's focus leg counts up and
+     has no length to set, which is why the clock is not editable there. */
+  const lenField = phase === "focus" ? "focusMin" : phase === "break" ? "breakMin" : "longMin";
+  const canSetLen = !running && !countUp;
+
+  const commitTime = () => {
+    const raw = editTime;
+    setEditTime(null);
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) return;
+    const [lo, hi] = LIMITS[lenField];
+    setCfg((c) => ({ ...c, [lenField]: clamp(n, lo, hi) }));
+  };
 
   /* ── derived ─────────────────────────────────────────── */
   const current = tasks.find((t) => t.id === currentId && !t.done);
@@ -463,7 +494,26 @@ export default function Focus() {
                   strokeDasharray={`${pct} ${1-pct}`} />
               </svg>
             )}
-            <div className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""}`}>{clock}</div>
+            {editTime !== null ? (
+              <input ref={timeRef} className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""} fx-timeinput`}
+                value={editTime} inputMode="numeric" aria-label="Segment length in minutes"
+                size={Math.max(2, editTime.length)}
+                onChange={(e) => setEditTime(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+                onBlur={commitTime}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") setEditTime(null);
+                }} />
+            ) : canSetLen ? (
+              <button className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""} fx-timebtn`}
+                onClick={() => setEditTime(String(cfg[lenField]))}
+                title="Click to change how long this segment runs"
+                aria-label={`${clock} remaining. Change the length of this segment.`}>
+                {clock}
+              </button>
+            ) : (
+              <div className={`fx-time${cfg.timerStyle === "ring" ? " sm" : ""}`}>{clock}</div>
+            )}
           </div>
 
           {showBar && (

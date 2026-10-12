@@ -78,6 +78,17 @@ export const CSS = `
   line-height:.94; font-variant-numeric:tabular-nums;
   text-shadow:0 6px 44px rgba(0,0,0,.4);}
 .fx-time.sm{font-size:clamp(60px, 12vw, 132px);}
+/* The clock doubles as the length control when the segment is idle. A
+   plain div gave no sign of that, so it becomes a real button with the
+   usual affordances. */
+.fx-timebtn{background:none; border:0; padding:0 6px; color:inherit; cursor:pointer;
+  font-family:inherit; font-weight:inherit; letter-spacing:inherit; line-height:inherit;
+  border-bottom:3px solid transparent; transition:border-color .16s;}
+.fx-timebtn:hover{border-bottom-color:rgba(255,255,255,.35);}
+.fx-timebtn:focus-visible{outline:2px solid var(--paper); outline-offset:8px; border-radius:14px;}
+.fx-timeinput{background:transparent; outline:none; padding:0 6px; width:auto; min-width:0;
+  border:0; border-bottom:3px solid var(--accent); color:var(--paper);
+  font-family:inherit; font-weight:800; text-align:center;}
 .fx-ring{position:absolute; inset:-9% -7%; pointer-events:none; overflow:visible;}
 .fx-ring circle{fill:none; stroke-linecap:round;}
 .fx-ring .track{stroke:rgba(255,255,255,.16);}
