@@ -72,6 +72,14 @@ export const SCENES = {
     paper:"#E7E9EE", muted:"#8E939E", accent:"#7C6BFF", chip:"#59606E",
     sky:`radial-gradient(90% 60% at 50% 100%, #23262E 0%, rgba(35,38,46,0) 62%),
          linear-gradient(180deg, #0A0B0E 0%, #121419 55%, #1A1D24 100%)` },
+  /* Drawn on a canvas rather than painted in CSS. The sky below still shows
+     through — the scene only draws hills and blobs over it. */
+  meadow: { name:"Meadow", dark:true, live:"blobs",
+    paper:"#FFF6E4", muted:"#C2AE8E", accent:"#FFC53D", chip:"#8FD14F",
+    sky:`radial-gradient(90% 62% at 50% 92%, #3E7A58 0%, rgba(62,122,88,0) 60%),
+         linear-gradient(180deg, #0E2231 0%, #16405A 44%, #2E7390 100%)`,
+    pal: { far:"#2F6B52", near:"#1F4E3C", blob:"#FFD34E", blobAlt:"#FF9BB3",
+           edge:"rgba(20,40,30,.5)", ink:"#23372C" } },
 };
 
 export const QUOTES = [

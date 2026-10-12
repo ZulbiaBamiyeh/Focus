@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { CSS } from "./styles.js";
 import Settings from "./settings.jsx";
+import Meadow from "./blobs.jsx";
 import { useAudio, useStation } from "./audio.js";
 import {
   STORE_KEY, DEFAULTS, SCENES, QUOTES, STATIONS,
@@ -386,6 +387,13 @@ export default function Focus() {
       <style>{CSS}</style>
 
       <div className="fx-sky" />
+      {th.live === "blobs" && (
+        /* One blob to start, one more for every block finished today, so the
+           meadow fills up as you work. They bounce on breaks and settle
+           while you are focusing. */
+        <Meadow palette={th.pal} bouncy={phase !== "focus"}
+          count={clamp(1 + (log[today()]?.sessions || 0), 1, 9)} />
+      )}
       {bg && <div className="fx-img" style={{ backgroundImage:`url("${bg}")` }} />}
       {cfg.bgVideo && (
         <div className="fx-video">

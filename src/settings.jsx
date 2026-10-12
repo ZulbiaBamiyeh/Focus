@@ -206,8 +206,11 @@ export default function Settings({ open, onClose, cfg, set, api, startTab }) {
                   {Object.entries(SCENES).map(([k, s]) => (
                     <button key={k} className={`fx-scene${cfg.theme === k ? " on" : ""}`}
                       aria-pressed={cfg.theme === k} onClick={() => set("theme")(k)}>
-                      <span className="fx-scenesky" style={{ background:s.sky }} />
-                      <em>{s.name}</em>
+                      <span className="fx-scenesky" style={{ background:s.sky }}>
+                        {/* A gradient swatch would not say "this one moves". */}
+                        {s.live && <SceneBlobs pal={s.pal} />}
+                      </span>
+                      <em>{s.name}{s.live ? " · live" : ""}</em>
                     </button>
                   ))}
                 </div>
@@ -402,6 +405,23 @@ export default function Settings({ open, onClose, cfg, set, api, startTab }) {
     </div>
   );
 }
+
+/* A still of the meadow for the scene picker — same shapes, no physics. */
+const SceneBlobs = ({ pal }) => (
+  <svg viewBox="0 0 120 74" preserveAspectRatio="none" aria-hidden="true"
+    style={{ display:"block", width:"100%", height:"100%" }}>
+    <path d="M0 48 Q30 40 60 46 T120 42 L120 74 L0 74Z" fill={pal.far} />
+    <path d="M0 56 Q34 48 68 55 T120 52 L120 74 L0 74Z" fill={pal.near} />
+    <g stroke={pal.edge} strokeWidth="1.2">
+      <ellipse cx="38" cy="48" rx="9" ry="8.4" fill={pal.blob} />
+      <ellipse cx="72" cy="50" rx="7" ry="6.6" fill={pal.blobAlt} />
+    </g>
+    <g fill={pal.ink}>
+      <circle cx="35" cy="46" r="1.3" /><circle cx="41" cy="46" r="1.3" />
+      <circle cx="69.6" cy="48.4" r="1.1" /><circle cx="74.4" cy="48.4" r="1.1" />
+    </g>
+  </svg>
+);
 
 function StatsPanel({ log, streak }) {
   const days = lastDays(14);
