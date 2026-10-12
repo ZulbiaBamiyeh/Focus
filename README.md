@@ -1,78 +1,89 @@
 # Focus
 
-A focus dashboard where the dial *is* the settings page. Drag the gauge to change the length of whatever block you're currently in — there is no settings route.
+A focus timer with a floating island that grows one thing for every block you finish.
 
-**Live:** https://zulbiabamiyeh.github.io/Focus/
+**Live:** https://zulbiabamiyeh.github.io/Focus/ · the original dashboard lives on at [/classic/](https://zulbiabamiyeh.github.io/Focus/classic/)
 
-## What's in it
+## How it works
 
-- **Four modes** — Pomodoro, Flowtime, Countdown, Stopwatch. Flowtime counts up and hands you a break sized as a fraction of what you actually worked (clamped 3–20 min), logging real minutes rather than a nominal 25.
-- **Direct-manipulation settings** — drag the ring to set the current block. Break length, long-break length, and the long-break interval are steppers sitting under the cycle pips.
-- **Seven scenes**, the last of which is a museum that grows with every minute you focus. See below.
-- **Six painted skies** — Midnight, Ember, Dawn, Grove, Orchid, Vellum — all layered CSS gradients, so nothing downloads and they scale to any viewport. Or paste your own image URL. Museum is the seventh.
-- **Ambience** — rain, ocean, fire, drone. All synthesised with the Web Audio API. No audio assets, no network. Fire has scheduled crackles; drone is four detuned oscillators through a lowpass.
-- **Station** — eleven long MapleStory / OSRS mixes via the YouTube IFrame API, plus any URL you paste in. The player element is 1×1 and offscreen; the visible control is a spinning disc. Ducks to 25% during breaks.
-- **Skip fx** — a short square-wave chirp, synthesised. Pitch-down on skip, pitch-up on next track.
-- **Tasks + daily stats + a seven-day history + streak**, persisted.
+- **Each focus block is one day on the island.** The sun rises when you start, crosses a dotted arc over the clock, and reaches golden hour as the block ends. The dots still ahead of it are the time left.
+- **Breaks are the evening.** The moon takes the same arc: a short break goes through dusk, a long one all the way to a starry night with the windows and lanterns lit. Pre-dawn hands back to the next morning.
+- **Something grows while you work.** The thing the next block will plant is visible at its real spot from the moment you start: a sapling filling out, or a building rising from its footings. Finish the block and it pops into place; reset or skip early and it sinks back into the ground.
+- **Landmarks** arrive at set counts: cottage (3rd block), lantern, well, windmill, pond, bench, beehives, lookout tower and more. In between it's oaks, cherries, maples, pines, bushes, flowers, mushrooms and mossy rocks. The island's radius grows with the count so there's always room.
+- Drag to look around, scroll or pinch to zoom. The camera drifts back on its own.
 
-## The museum
+### Modes
 
-The last scene in the row swaps the painted sky for a pixel museum that grows with the total focus minutes behind it. It is a scene like any other, so picking a different one puts the gradient back; the brightness slider in Preferences appears only while it is active.
+| Mode | Focus | Break | Plants when |
+|---|---|---|---|
+| Pomodoro | fixed length | short, every Nth long | the block runs out (or is skipped at ≥ 90%) |
+| Flowtime | counts up | focus ÷ divisor, 3–20 min | you finish it after ≥ 5 min |
+| Countdown | one fixed block | none | the block runs out (or ≥ 90%) |
+| Stopwatch | counts up | none | you finish it after ≥ 5 min |
 
-Twenty-eight halls open on a widening curve (`10i² + 15i` minutes, so the first arrives after one pomodoro and the last takes weeks). Halls cycle through five kinds — painting gallery, antiquities, map room, reading room, sculpture court — each furnished from a fixed layout with per-hall jitter, so no two look identical but every load is the same. Visitors are bound to a single hall and walk between its exhibits; that is what keeps them out of the walls, since there is no collision.
+Count-up blocks have no end, so their sun approaches golden hour without ever reaching it, and the sprout is fully grown at 25 minutes.
 
-Two canvas layers. The static one holds floor, walls and exhibits and is redrawn only when a hall opens. Only the visitor pass runs per frame, and it stops when the tab is hidden or `prefers-reduced-motion` is set.
+### Station
 
-The footprint never drops below 3×2 halls. A single furnished room would need ~9× scaling to cover a desktop viewport, which turns one visitor into the whole screen; the empty halls also show where the museum is going to grow. A radial well is painted under the middle so the readout stays legible over the tiles.
+Eleven long MapleStory / OSRS mixes through the YouTube IFrame API, plus any link you paste. The player is a 1×1 element offscreen; the visible control is the spinning disc. It gets quieter during breaks (toggle in the station panel). The API script isn't requested until you first press play. Behind an ad blocker it never arrives, and after nine seconds the station says so.
 
-**Assets.** Sprites are LimeZu's [Modern Interiors](https://limezu.itch.io/moderninteriors) free pack, in `src/assets/` with its licence. It is **non-commercial only** — fine for this, but it rules out ever charging for the site, and note the raw sheets are redistributable from a public repo. The free pack has no dinosaurs; the nearest things to fossils are the urns and the bone-like pieces in the sculpture court.
+### Keys
 
-## The layout
-
-The timer is the whole page. Everything else lives behind a dock at the bottom — Tasks, Ambience, Station, Focus stats, Preferences — each opening as a floating frosted panel that Esc or a click outside dismisses. What stays permanently on screen is only what you'd want to look at while working: the time, the block you're in, the one task you picked, and the controls.
-
-Glass tints are derived from the scene rather than a theme name: `--glass` and friends flip between a white film and a light film depending on `scene.dark`, so a light scene like Vellum gets legible panels without a second set of rules.
+<kbd>Space</kbd> start/pause · <kbd>R</kbd> reset · <kbd>S</kbd> skip / finish · <kbd>M</kbd> music · <kbd>J</kbd> journal · <kbd>,</kbd> settings · <kbd>F</kbd> fullscreen · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> phases · <kbd>Esc</kbd> close panels
 
 ## Running it
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:5173/Focus/
+npm run build      # typecheck + static build in dist/ (both pages)
+npm run typecheck
 ```
 
-Only runtime dependency is `react`. Styles are a plain `<style>` block inside the component — no Tailwind, no CSS modules.
+`npm run build` emits both pages to `dist/`. The Vite `base` defaults to `/Focus/` for GitHub Pages; set `BASE_PATH=/` for a custom domain or local static serving.
 
-`npm run build` emits to `dist/`. The Vite `base` defaults to `/Focus/` for GitHub Pages; set `BASE_PATH=/` for a custom domain or local static serving.
+## Layout
 
-## Deploying
-
-`.github/workflows/pages.yml` builds and publishes to GitHub Pages on every push. It authenticates with OIDC, so there are no secrets to configure.
-
-**One manual step, once:** set **Settings → Pages → Source** to **GitHub Actions**. Until that's done every run fails at `configure-pages` with *"Get Pages site failed"*. The action's `enablement: true` input can't do it for you — creating a Pages site needs admin rights that `GITHUB_TOKEN` doesn't carry. After flipping it, re-run the workflow from the Actions tab.
-
-The workflow passes the repo name as `BASE_PATH`, writes `.nojekyll` (Pages otherwise strips underscore-prefixed files), and copies `index.html` to `404.html` so deep links resolve.
+```
+index.html            the island (TypeScript + three.js, no framework)
+src/
+  main.ts             wiring and persistence
+  timer.ts            four modes over focus / break / long, wall-clock based
+  garden.ts           what grows, where, and when (pure data, deterministic)
+  station.ts          YouTube station
+  sfx.ts              synthesised chimes
+  ui.ts, styles.css   the HUD
+  world/
+    engine.ts         renderer, bloom → vignette/grain post chain, frame pacing, auto quality
+    world.ts          the scene: lights, camera, drag/zoom, palette crossfades
+    sky.ts            day/dusk/night palettes; sun, moon and arc drawn in screen space
+    terrain.ts        the island: stitched polar rings, flat shaded, grows with its radius
+    models.ts         every plant and building, built from primitives at runtime
+    gardenView.ts     sprout, pop animation, sparkles, baking settled items
+    ambient.ts        cloud sea, drifting clouds, floating rocks, smoke, pollen/fireflies
+classic/              the v1 React dashboard, untouched apart from its path
+```
 
 ## Notes for whoever picks this up
 
-**Storage.** `store` near the top is an adapter. It uses `window.storage` if the host provides it, else `localStorage`, else memory. In a normal web app it'll take the localStorage path. Key is `ember:v3`; bump it if you change the persisted shape.
+**Nothing downloads.** Every model is a few primitives merged into one vertex-coloured, flat-shaded geometry at runtime; colours carry the look. Inkbound's `engine.ts` was the template for the renderer and post-processing.
 
-**Dates are local, not UTC.** `dayKey()` formats off local getters rather than `toISOString()`, so an 8pm session in UTC-5 files under the day the user calls today. The stats log, streak, and week view all key off it.
+**It's frugal on purpose.** A focus tab sits open for hours, so the loop is capped at 30 fps while running, 24 idle, 8 in calm motion, and stops entirely when the tab is hidden. Settled garden items are merged ("baked") into one solid and one glow mesh, so a garden of 300 things is two draw calls plus any windmill sails. "Auto" graphics drops a level by itself if frames stay slow; low turns off post-processing and shadows.
 
-**The YouTube player may be blocked.** Behind an ad blocker or a restrictive extension the embed won't load, and the Station card says so instead of sitting dead. `useStation` has a 9-second timeout that flips `failed` if the API script never arrives. The synthesised ambience is unaffected.
+**The sky is half screen-space.** The camera looks down at the island, so the real sky is mostly above the viewport. The sun, moon and their arc are drawn on an arch over the clock in screen coordinates (`archFor` in `sky.ts`); the light falling on the island follows the same progress from in front, so the faces you see are lit.
 
-**Timer accuracy.** The tick interval is 200ms but it never accumulates — countdowns read off `endAt.current` (a wall-clock timestamp) and count-ups off `runFrom.current`. Backgrounded tabs throttle the interval but don't drift. Both refs are persisted, so a block survives a reload; a countdown that expired while the tab was closed lands on zero paused rather than firing a stale chime.
+**The layout is deterministic** in `(seed, index)`. The thing growing during a block is exactly what will be planted, and reloads never move a tree. Each item is placed inside the island as it was *before* that item grew it, avoiding everything placed earlier. Structures keep to the middle and turn roughly toward the camera.
 
-**Persistence throughput.** The save effect deliberately excludes `remaining` and `elapsed` from its deps — they change five times a second. It reads them from a ref at write time instead, and the timestamp refs are the real source of truth for anything running.
+**Timer accuracy.** Countdowns read off `endAt`, count-ups off `runFrom`; both are persisted, so a block survives a reload and a throttled background tab never drifts. A countdown that ran out while the page was closed lands on zero, paused, and completes (and plants) the moment you press start. State is saved on discrete changes (phase, mode, run state, settings), not per tick.
 
-**Known gaps, roughly in priority order:**
+**Storage** is `localStorage` key `isle:v1`, falling back to memory. The classic app keeps its own `ember:v4` on the same origin; neither reads the other.
 
-1. Stats history is seven days in the UI; `log` holds every day it has ever recorded, so a month view is a rendering job.
-2. Task reordering is up/down buttons, not drag-and-drop.
-3. Custom stations are stored as bare video IDs with a placeholder title — fetching real titles would need the Data API and a key.
-4. No picture-in-picture, though the block now shows in the tab title.
+**Accessibility.** Panels are dialogs with `aria-expanded` openers and close on Esc or an outside click, returning focus. Ink colour flips with the sky (`data-night` on `<html>`) so text stays legible from noon to midnight. `prefers-reduced-motion` turns on Calm motion by default: no camera sway, still clouds and motes, and far fewer frames. Phase ends and plantings are announced through a polite live region.
 
-**Accessibility already handled** — the dial is a `role="slider"` operable with arrow keys, focus rings are visible throughout, task row actions are labelled with the task they act on, the week chart carries a text alternative, dock buttons expose `aria-expanded`, Esc closes any panel, and `prefers-reduced-motion` kills the drift, rise and breathe animations and slows the disc. Row actions stay visible on touch, where there's no hover. Please don't regress these.
+## Deploying
+
+`.github/workflows/pages.yml` builds and publishes to GitHub Pages on pushes to its listed branches. It authenticates with OIDC, so there are no secrets to configure. One manual step, once: **Settings → Pages → Source → GitHub Actions**.
 
 ## On the Pomodoro question
 
-The 25/5 split is arbitrary and the evidence is mixed — a 2025 Maastricht study found Pomodoro breaks increased fatigue faster than self-regulated ones, with no difference in productivity or flow. What Pomodoro reliably provides is an *external* cue to stop, which matters because self-interrupted tasks get completed more slowly than externally interrupted ones. Flowtime mode exists to keep that cue without the arbitrary interruption. Worth keeping both rather than picking a winner.
+The 25/5 split is arbitrary and the evidence is mixed. A 2025 Maastricht study found Pomodoro breaks increased fatigue faster than self-regulated ones, with no difference in productivity or flow. What Pomodoro reliably provides is an *external* cue to stop. Flowtime keeps that cue without the arbitrary interruption. Both stay.
